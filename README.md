@@ -3,10 +3,39 @@
   <div>&nbsp;</div>
   <img src="assets/boltzgen.png" alt="BoltzGen logo" width="60%">
 
-[Paper](https://hannes-stark.com/assets/boltzgen.pdf) | 
+[Paper](https://hannes-stark.com/assets/boltzgen.pdf) |
 [Slack](https://boltz.bio/join-slack) <br> <br>
  ![alt text](assets/cover.png)
 </div>
+
+---
+
+## 🚀 Amazon SageMaker Support
+
+This is a fork of [BoltzGen](https://github.com/HannesStark/boltzgen) that enables running BoltzGen on **Amazon SageMaker Processing Jobs**.
+
+**Key Features:**
+- ☁️ Run BoltzGen on scalable GPU instances on AWS (ml.g4dn, ml.g5, ml.g6e, ...)
+- 💰 Cost-effective protein design ($0.12-$7 per job)
+- 📦 Containerized deployment with ECR
+- 🔄 Automated setup scripts
+
+**Quick Start:**
+```bash
+# See detailed instructions in sagemaker/
+./sagemaker/build_and_push.sh
+python sagemaker/run_processing_job.py --design-spec example/hard_targets/1g13prot.yaml --s3-bucket your-bucket --role arn:aws:iam::ACCOUNT_ID:role/BoltzGenSageMakerRole
+```
+
+**Documentation:**
+- [Quick Start Guide](sagemaker/QUICKSTART.md) - Get started in 1 minute
+- [Complete Guide](sagemaker/README.md) - Detailed setup and usage
+
+**TODO:**
+- [ ] Real-time inference endpoint support
+- [ ] Training job integration
+
+---
 
 # Installation
 In an environment with python >=3.11:

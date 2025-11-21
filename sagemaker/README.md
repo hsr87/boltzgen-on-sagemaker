@@ -65,6 +65,25 @@ aws iam attach-role-policy \
 aws s3 mb s3://your-boltzgen-bucket --region us-east-1
 ```
 
+### 5. Set Environment Variables
+
+```bash
+# Required environment variables
+export AWS_REGION=us-east-1
+export AWS_DEFAULT_REGION=us-east-1
+export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+export S3_BUCKET=your-boltzgen-bucket
+export ECR_IMAGE_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/boltzgen-sagemaker:latest
+export IAM_ROLE=arn:aws:iam::${AWS_ACCOUNT_ID}:role/BoltzGenSageMakerRole
+
+# Verify settings
+echo "AWS Account ID: $AWS_ACCOUNT_ID"
+echo "AWS Region: $AWS_REGION"
+echo "S3 Bucket: $S3_BUCKET"
+echo "ECR Image URI: $ECR_IMAGE_URI"
+echo "IAM Role: $IAM_ROLE"
+```
+
 ## Building and Pushing Docker Image to ECR
 
 ### Automated Build (Recommended)
@@ -121,8 +140,10 @@ docker push <account-id>.dkr.ecr.us-east-1.amazonaws.com/boltzgen-sagemaker:late
 ```bash
 python sagemaker/run_processing_job.py \
   --design-spec example/vanilla_protein/1g13prot.yaml \
-  --s3-bucket your-boltzgen-bucket \
+  --s3-bucket $S3_BUCKET \
   --instance-type ml.g4dn.xlarge \
+  --region $AWS_REGION \
+  --role $IAM_ROLE \
   --num-designs 10 \
   --budget 2
 ```
@@ -150,6 +171,8 @@ python sagemaker/run_processing_job.py \
 - `--design-spec`: Local design specification YAML file
 - `--s3-bucket`: S3 bucket to store results
 - `--instance-type`: SageMaker instance type (GPU instance recommended)
+- `--region`: AWS region (e.g., us-east-1)
+- `--role`: IAM role ARN (REQUIRED - use BoltzGenSageMakerRole)
 - `--num-designs`: Number of designs to generate
 - `--budget`: Number of final designs to select
 - `--wait`: Wait for job completion (optional)
@@ -244,6 +267,27 @@ pip install --upgrade awscli
 
 # Verify credentials
 aws sts get-caller-identity
+```
+
+### IAM Role "Could not assume role" Error
+
+**Error**: `Could not assume role arn:aws:iam::xxx:role/aws-reserved/sso.amazonaws.com/...`
+
+**Cause**: The script is trying to use an SSO administrator role, which SageMaker cannot assume.
+
+**Solution**: Always explicitly specify the BoltzGenSageMakerRole:
+
+```bash
+export IAM_ROLE=arn:aws:iam::${AWS_ACCOUNT_ID}:role/BoltzGenSageMakerRole
+
+python sagemaker/run_processing_job.py \
+  --design-spec example/hard_targets/1g13prot.yaml \
+  --s3-bucket your-bucket \
+  --instance-type ml.g5.xlarge \
+  --region us-east-1 \
+  --role $IAM_ROLE \
+  --num-designs 1 \
+  --budget 2
 ```
 
 ### IAM Permission Errors

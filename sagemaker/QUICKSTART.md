@@ -8,9 +8,12 @@ A quick guide to run BoltzGen using AWS SageMaker Processing.
 
 ```bash
 # 1. Set environment variables
-export S3_BUCKET=your-bucket-name
 export AWS_REGION=us-east-1
-export IAM_ROLE=arn:aws:iam::123456789012:role/YourSageMakerRole  # Optional
+export AWS_DEFAULT_REGION=us-east-1
+export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+export S3_BUCKET=your-bucket-name
+export ECR_IMAGE_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/boltzgen-sagemaker:latest
+export IAM_ROLE=arn:aws:iam::${AWS_ACCOUNT_ID}:role/BoltzGenSageMakerRole
 
 # 2. Automated setup and test run
 ./sagemaker/setup_and_test.sh
@@ -30,9 +33,15 @@ aws s3 sync s3://$S3_BUCKET/boltzgen/output/ ./results
 ### Step 2: Run Processing Job
 
 ```bash
+# Set IAM_ROLE first
+export IAM_ROLE=arn:aws:iam::${AWS_ACCOUNT_ID}:role/BoltzGenSageMakerRole
+
 python sagemaker/run_processing_job.py \
   --design-spec example/hard_targets/1g13prot.yaml \
-  --s3-bucket your-bucket-name \
+  --s3-bucket $S3_BUCKET \
+  --instance-type ml.g4dn.xlarge \
+  --region $AWS_REGION \
+  --role $IAM_ROLE \
   --num-designs 10 \
   --budget 2
 ```
@@ -81,6 +90,23 @@ aws configure
 **"S3 bucket does not exist"**
 ```bash
 aws s3 mb s3://your-bucket-name --region us-east-1
+```
+
+**"Could not assume role" error**
+```bash
+# This error occurs when using SSO roles or incorrect IAM roles.
+# Solution: Always specify the BoltzGenSageMakerRole explicitly:
+export IAM_ROLE=arn:aws:iam::${AWS_ACCOUNT_ID}:role/BoltzGenSageMakerRole
+
+# Then use --role parameter in your command:
+python sagemaker/run_processing_job.py \
+  --design-spec example/hard_targets/1g13prot.yaml \
+  --s3-bucket $S3_BUCKET \
+  --instance-type ml.g4dn.xlarge \
+  --region $AWS_REGION \
+  --role $IAM_ROLE \
+  --num-designs 10 \
+  --budget 2
 ```
 
 ## More Information
