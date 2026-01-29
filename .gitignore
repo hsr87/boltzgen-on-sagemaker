@@ -4,31 +4,23 @@ scripts/bindcraft/utils.py
 !filter.ipynb
 !similarity.ipynb
 cache
-results
-workdir
-workbench
+results/
+workdir/
+workbench/
 .vscode/
-wandb
-tmp
-slurm_out
-small_data
-.idea
+wandb/
+tmp/
+slurm_out/
+small_data/
+.idea/
 *.pkl
 *.out
 .DS_Store
-
-# Development files
-.vscode
 outputs/
-workdir
-results
 notebooks/
 *.ckpt
 samples/
-workbench
-workdir_fold
-wandb
-tmp
+workdir_fold/
 debug.txt
 *.pt
 
@@ -199,9 +191,6 @@ cython_debug/
 # Scratch dir
 scratch
 
-# pt and yaml files
-*.pt
-
 data/PepPC/
 data/PepPC*
 *.err
@@ -217,5 +206,18 @@ ec2-userdata.sh
 sagemaker/image_uri.txt
 
 # Results from Processing Jobs
-results/
+results_*/
 
+# SageMaker Pipeline batch files
+batch_*.json
+local_config.yaml
+sagemaker/pipeline/examples/synthetic_specs/
+sagemaker/pipeline/examples/test_*_specs/
+
+# SageMaker Pipeline specs (copy from example/hard_targets/)
+sagemaker/pipeline/examples/*_specs/
+
+# Claude documentation (auto-generated)
+claude.md
+
+.temp.md

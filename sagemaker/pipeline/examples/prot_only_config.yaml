@@ -1,0 +1,33 @@
+# BoltzGen Batch - Protein-only specs (10 samples)
+# No external dependencies, self-contained YAML + CIF files
+#
+# This config uses the included prot_only_specs/ directory as example data.
+# Update AWS settings with your own values before running.
+
+aws:
+  region: us-east-1
+  s3_bucket: your-sagemaker-bucket          # Replace with your S3 bucket
+  role_arn: arn:aws:iam::123456789012:role/SageMakerExecutionRole  # Replace with your IAM role
+  image_uri: 123456789012.dkr.ecr.us-east-1.amazonaws.com/boltzgen-sagemaker:latest  # Replace with your ECR image
+
+instances:
+  count: 2                    # 2 instances = 8 GPUs total
+  type: ml.g5.12xlarge        # 4 GPUs per instance
+  volume_size: 100
+  max_runtime: 432000         # 5 days max
+
+design:
+  num_designs: 100
+  budget: 10
+  protocol: protein-anything
+  specs_dir: ./prot_only_specs  # Relative path to example specs
+  file_pattern: "*.yaml"
+
+batch:
+  name_prefix: boltzgen-prot10
+  per_sample_timeout: 10800   # 3 hours per sample (complex targets may need more)
+  distribution: round_robin   # Distribute samples cyclically across instances
+
+output:
+  s3_prefix: boltzgen-batch
+  local_dir: ./results

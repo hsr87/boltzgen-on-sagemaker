@@ -1,0 +1,69 @@
+# BoltzGen Batch Execution Configuration
+# Configure batch processing parameters for SageMaker Processing Jobs
+
+# AWS Configuration
+aws:
+  region: us-east-1
+  s3_bucket: your-sagemaker-bucket
+  role_arn: arn:aws:iam::123456789012:role/SageMakerExecutionRole
+  image_uri: 123456789012.dkr.ecr.us-east-1.amazonaws.com/boltzgen-sagemaker:latest
+
+# Instance Configuration
+instances:
+  # Number of instances to use (for multi-instance mode)
+  count: 2
+
+  # Instance type
+  # Single GPU: ml.g5.xlarge ($1.41/hr), ml.g4dn.xlarge ($0.74/hr)
+  # Multi-GPU:  ml.g5.12xlarge ($7.09/hr, 4 GPUs), ml.g5.48xlarge ($20.36/hr, 8 GPUs)
+  type: ml.g5.12xlarge
+
+  # Storage volume size (GB)
+  volume_size: 100
+
+  # Maximum runtime in seconds (max: 432000 = 5 days)
+  max_runtime: 432000  # 5 days
+
+# Design Parameters
+design:
+  # Number of designs to generate per sample
+  num_designs: 100
+
+  # Number of top designs to select
+  budget: 10
+
+  # Protocol type
+  protocol: protein-anything
+
+  # Directory containing design spec files
+  specs_dir: /path/to/your/design_specs
+
+  # File pattern to match (glob)
+  file_pattern: "*.yaml"
+
+# Batch Execution Settings
+batch:
+  # Batch name prefix (used in job names)
+  name_prefix: boltzgen-batch
+
+  # Per-sample timeout in seconds (complex targets may need 2-3 hours)
+  per_sample_timeout: 10800  # 3 hours
+
+  # Sample distribution method: "chunk" or "round_robin"
+  # chunk: consecutive samples to each instance
+  # round_robin: distribute samples cyclically
+  distribution: chunk
+
+  # Total samples to process (0 = all samples)
+  total_samples: 0
+
+  # Delay between job starts (seconds) - prevents rate limiting
+  start_delay: 2
+
+# Output Configuration
+output:
+  # S3 output path prefix
+  s3_prefix: boltzgen-batch
+
+  # Local directory for downloading results
+  local_dir: ./results
