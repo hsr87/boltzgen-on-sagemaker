@@ -33,7 +33,7 @@ from sagemaker.workflow.parameters import (
 )
 from sagemaker.workflow.pipeline_context import PipelineSession
 
-from config import PipelineConfig, PROTOCOL_CONFIGS, get_scaling_preset_for_designs
+from config import PipelineConfig, PROTOCOL_CONFIGS, get_scaling_preset_for_designs, SCALING_PRESETS
 
 
 # Script paths
@@ -430,7 +430,6 @@ class BoltzGenPipeline:
             # Auto-scale if not explicitly set
             if design_instance_count is None:
                 preset = get_scaling_preset_for_designs(num_designs)
-                from config import SCALING_PRESETS
                 execution_params["DesignInstanceCount"] = SCALING_PRESETS[preset]["design"]["instance_count"]
                 execution_params["FoldingInstanceCount"] = SCALING_PRESETS[preset]["folding"]["instance_count"]
 

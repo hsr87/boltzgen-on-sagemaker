@@ -1,0 +1,92 @@
+# BoltzGen SageMaker Pipeline Configuration
+# Supports YAML-based configuration for easy scaling and management
+#
+# Usage:
+#   python run_pipeline.py --config pipeline_config.yaml create
+#   python run_pipeline.py --config pipeline_config.yaml run --design-spec specs/protein.yaml
+
+# AWS Configuration (can be overridden by environment variables)
+# Set these in .env file or export as environment variables:
+#   AWS_REGION, AWS_S3_BUCKET, AWS_ROLE_ARN, AWS_IMAGE_URI
+aws:
+  region: ${AWS_REGION:us-east-1}
+  s3_bucket: ${AWS_S3_BUCKET:your-sagemaker-bucket}
+  role_arn: ${AWS_ROLE_ARN:arn:aws:iam::123456789012:role/SageMakerExecutionRole}
+  image_uri: ${AWS_IMAGE_URI:123456789012.dkr.ecr.us-east-1.amazonaws.com/boltzgen-sagemaker:latest}
+
+# Pipeline identification
+pipeline:
+  name: BoltzGen-Protein-Design
+  description: AI-powered protein binder design pipeline with 5 steps
+  s3_prefix: boltzgen-pipeline
+
+# Design parameters
+design:
+  num_designs: 10000          # Total designs to generate
+  budget: 100                 # Final designs to keep after filtering
+  protocol: protein-anything  # Options: protein-anything, peptide-anything, nanobody-anything
+  specs_dir: ./specs          # Directory containing design spec YAML files
+  file_pattern: "*.yaml"
+
+# Scaling configuration
+# Presets: small (<=10K), medium (10K-100K), large (100K-1M), xlarge (>1M)
+scaling:
+  preset: auto                # auto, small, medium, large, xlarge
+
+  # Manual override for each step (optional)
+  # Uncomment to customize instance counts per step
+  # steps:
+  #   design:
+  #     instance_count: 5
+  #     instance_type: ml.g5.12xlarge
+  #   inverse_folding:
+  #     instance_count: 5
+  #   folding:
+  #     instance_count: 5
+  #   analysis:
+  #     instance_count: 2
+  #   filtering:
+  #     instance_count: 1
+
+# Instance configurations per step
+instances:
+  design:
+    type: ml.g5.xlarge        # GPU instance for diffusion
+    volume_size: 100          # GB
+    max_runtime: 86400        # 24 hours
+    use_spot: true            # Use spot instances for cost savings
+
+  inverse_folding:
+    type: ml.g5.xlarge
+    volume_size: 50
+    max_runtime: 43200        # 12 hours
+    use_spot: true
+
+  folding:
+    type: ml.g5.xlarge
+    volume_size: 50
+    max_runtime: 43200        # 12 hours
+    use_spot: true
+
+  analysis:
+    type: ml.m5.xlarge        # CPU instance for analysis
+    volume_size: 50
+    max_runtime: 14400        # 4 hours
+    use_spot: true
+
+  filtering:
+    type: ml.m5.large         # Small CPU instance
+    volume_size: 30
+    max_runtime: 3600         # 1 hour
+    use_spot: false           # Fast step, no need for spot
+
+# Processing options
+processing:
+  per_sample_timeout: 7200    # 2 hours per sample
+  enable_caching: true        # Cache intermediate results
+  cache_expiry: 7d            # Cache expiration
+
+# Output configuration
+output:
+  s3_prefix: boltzgen-pipeline/output
+  local_dir: ./results

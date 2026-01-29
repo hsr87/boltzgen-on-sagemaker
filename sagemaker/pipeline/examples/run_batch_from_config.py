@@ -321,7 +321,7 @@ def monitor_jobs(job_names: List[str], region: str, check_interval: int = 30) ->
                     statuses[status] += 1
                 else:
                     statuses["Other"] += 1
-            except:
+            except Exception:
                 statuses["Other"] += 1
 
         print(f"  InProgress: {statuses['InProgress']} | Completed: {statuses['Completed']} | Failed: {statuses['Failed']}", end="\r")

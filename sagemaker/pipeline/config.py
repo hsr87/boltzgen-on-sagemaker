@@ -23,36 +23,53 @@ class InstanceConfig:
     max_wait_seconds: int = 86400  # For spot instances
 
 
+# GPU counts per instance type
+GPU_COUNTS = {
+    "ml.g5.xlarge": 1,
+    "ml.g5.2xlarge": 1,
+    "ml.g5.12xlarge": 4,
+    "ml.g5.24xlarge": 4,
+    "ml.g5.48xlarge": 8,
+    "ml.g4dn.xlarge": 1,
+    "ml.g4dn.12xlarge": 4,
+}
+
 # Default instance configurations for each step
+# Using ml.g5.12xlarge (4 GPUs) for GPU steps to enable parallel processing
 INSTANCE_CONFIGS = {
     "design": InstanceConfig(
-        instance_type="ml.g5.xlarge",
+        instance_type="ml.g5.12xlarge",  # 4 GPUs for parallel processing
         instance_count=1,
         volume_size_gb=100,
+        max_runtime_seconds=172800,  # 48 hours
         use_spot=True,
     ),
     "inverse_folding": InstanceConfig(
-        instance_type="ml.g5.xlarge",
+        instance_type="ml.g5.12xlarge",  # 4 GPUs
         instance_count=1,
         volume_size_gb=50,
+        max_runtime_seconds=86400,  # 24 hours
         use_spot=True,
     ),
     "folding": InstanceConfig(
-        instance_type="ml.g5.xlarge",
+        instance_type="ml.g5.12xlarge",  # 4 GPUs
         instance_count=1,
         volume_size_gb=50,
+        max_runtime_seconds=86400,  # 24 hours
         use_spot=True,
     ),
     "analysis": InstanceConfig(
         instance_type="ml.m5.xlarge",
         instance_count=1,
         volume_size_gb=50,
+        max_runtime_seconds=14400,  # 4 hours
         use_spot=True,
     ),
     "filtering": InstanceConfig(
         instance_type="ml.m5.large",
         instance_count=1,
         volume_size_gb=30,
+        max_runtime_seconds=3600,  # 1 hour
         use_spot=False,  # Fast step, no need for spot
     ),
 }
@@ -126,8 +143,9 @@ class PipelineConfig:
         if not self.role_arn:
             try:
                 self.role_arn = get_execution_role()
-            except Exception:
-                pass  # Will need to be set manually
+            except (ValueError, RuntimeError) as e:
+                # Not running in SageMaker environment - role must be set manually
+                print(f"Note: Could not auto-detect IAM role ({e}). Set role_arn manually.")
 
         if not self.image_uri:
             self._set_default_image_uri()
@@ -140,6 +158,9 @@ class PipelineConfig:
 
     def get_instance_config(self, step_name: str) -> InstanceConfig:
         """Get instance configuration for a specific step with scaling applied."""
+        valid_steps = list(INSTANCE_CONFIGS.keys())
+        if step_name not in INSTANCE_CONFIGS:
+            raise ValueError(f"Invalid step name: '{step_name}'. Valid steps: {valid_steps}")
         base_config = INSTANCE_CONFIGS[step_name]
 
         # Apply scaling preset

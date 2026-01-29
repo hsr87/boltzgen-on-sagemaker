@@ -11,20 +11,20 @@ Scalable protein design pipeline using BoltzGen on AWS SageMaker.
 │                                                                  │
 │  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐       │
 │  │   Design     │    │   Inverse    │    │   Folding    │       │
-│  │   Specs      │───▶│   Folding    │───▶│  Validation  │       │
-│  │   (S3)       │    │   (GPU)      │    │   (GPU)      │       │
+│  │   (GPU)      │───▶│   Folding    │───▶│  Validation  │       │
+│  │              │    │   (GPU)      │    │   (GPU)      │       │
 │  └──────────────┘    └──────────────┘    └──────────────┘       │
-│                             │                    │               │
-│                             ▼                    ▼               │
-│                      ┌──────────────┐    ┌──────────────┐       │
-│                      │   Analysis   │───▶│   Results    │       │
-│                      │   & Ranking  │    │   (S3)       │       │
-│                      └──────────────┘    └──────────────┘       │
+│         │                   │                    │               │
+│         ▼                   ▼                    ▼               │
+│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐       │
+│  │   Analysis   │───▶│   Filtering  │───▶│   Results    │       │
+│  │   (CPU)      │    │   (CPU)      │    │   (S3)       │       │
+│  └──────────────┘    └──────────────┘    └──────────────┘       │
 │                                                                  │
 ├─────────────────────────────────────────────────────────────────┤
-│  Execution Modes:                                                │
-│  • Single Instance: 1x ml.g5.12xlarge (4 GPUs parallel)         │
-│  • Multi Instance:  Nx instances for massive parallelization    │
+│  Two Execution Modes:                                           │
+│  • SageMaker Pipeline: 5-step workflow with caching & scaling   │
+│  • Processing Job: Direct batch execution for simple cases      │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -35,37 +35,91 @@ Scalable protein design pipeline using BoltzGen on AWS SageMaker.
 1. AWS account with SageMaker access
 2. Docker image pushed to ECR (see `/sagemaker/docker/`)
 3. IAM role with SageMaker permissions
-4. Python 3.8+ with boto3, pyyaml
+4. Python 3.8+ with required packages
 
 ```bash
-pip install boto3 pyyaml python-dotenv
+pip install boto3 pyyaml sagemaker
 ```
 
-### Run Batch Processing
+### Setup AWS Credentials
 
 ```bash
-cd sagemaker/pipeline/examples
-
-# 1. Setup AWS credentials
+# Copy environment template
 cp .env.example .env
-# Edit .env with your AWS settings
 
-# 2. Prepare example data
-mkdir -p prot_only_specs
-cp ../../../example/hard_targets/*prot.yaml prot_only_specs/
-cp ../../../example/hard_targets/*.cif prot_only_specs/
+# Edit with your AWS settings
+vim .env
+```
 
-# 3. Estimate cost and time
-python estimate_batch.py --samples 100
+Example `.env`:
+```bash
+AWS_REGION=us-east-1
+AWS_S3_BUCKET=your-sagemaker-bucket
+AWS_ROLE_ARN=arn:aws:iam::123456789012:role/SageMakerExecutionRole
+AWS_IMAGE_URI=123456789012.dkr.ecr.us-east-1.amazonaws.com/boltzgen-sagemaker:latest
+```
 
-# 4. Edit configuration
-vim prot_only_config.yaml  # Update with your .env values
+## Execution Modes
 
-# 5. Run batch (dry-run first)
-python run_single_instance_batch.py --config prot_only_config.yaml --dry-run
+### Mode 1: SageMaker Pipeline (Recommended)
 
-# 6. Execute
+Full 5-step workflow with caching, scaling, and monitoring.
+
+```bash
+# 1. Create/update pipeline
+python run_pipeline.py --config local_config.yaml create
+
+# 2. Run pipeline with design specs
+python run_pipeline.py --config local_config.yaml run
+
+# 3. Check status
+python run_pipeline.py --region us-east-1 status --execution-arn <ARN>
+
+# 4. List recent executions
+python run_pipeline.py --region us-east-1 list
+```
+
+**Configuration via YAML (`pipeline_config.yaml`):**
+
+```yaml
+aws:
+  region: ${AWS_REGION}          # From .env
+  s3_bucket: ${AWS_S3_BUCKET}
+  role_arn: ${AWS_ROLE_ARN}
+  image_uri: ${AWS_IMAGE_URI}
+
+pipeline:
+  name: BoltzGen-Protein-Design
+  s3_prefix: boltzgen-pipeline
+
+design:
+  num_designs: 10000
+  budget: 100
+  protocol: protein-anything
+  specs_dir: ./specs
+  file_pattern: "*.yaml"
+
+scaling:
+  preset: auto    # auto, small, medium, large, xlarge
+
+instances:
+  design:
+    type: ml.g5.12xlarge   # 4 GPUs for parallel processing
+    use_spot: true
+```
+
+### Mode 2: Processing Job (Simple Batch)
+
+Direct batch execution for simple use cases.
+
+```bash
+cd examples
+
+# Single instance with multi-GPU
 python run_single_instance_batch.py --config prot_only_config.yaml
+
+# Multiple instances in parallel
+python run_batch_from_config.py --config batch_config.yaml
 ```
 
 ## Directory Structure
@@ -73,65 +127,103 @@ python run_single_instance_batch.py --config prot_only_config.yaml
 ```
 sagemaker/pipeline/
 ├── README.md                 # This file
+├── .env.example              # AWS credentials template
+├── .env                      # AWS credentials (gitignored)
+├── pipeline_config.yaml      # Pipeline configuration template
+├── local_config.yaml         # Local testing configuration
 ├── config.py                 # Pipeline configuration classes
 ├── pipeline.py               # SageMaker Pipeline definition
 ├── run_pipeline.py           # Pipeline execution CLI
 ├── scripts/                  # Processing step scripts
-│   ├── design_step.py
+│   ├── utils.py              # Shared utilities (GPU detection, progress tracking)
+│   ├── design_step.py        # Multi-GPU parallel design generation
 │   ├── inverse_folding_step.py
 │   ├── folding_step.py
 │   ├── analysis_step.py
 │   └── filtering_step.py
 └── examples/                 # Batch processing examples
     ├── README.md
+    ├── .env.example
     ├── batch_config.yaml
+    ├── prot_only_config.yaml
     ├── run_single_instance_batch.py
     ├── run_batch_from_config.py
     ├── estimate_batch.py
     └── QUOTA_INCREASE_GUIDE.md
 ```
 
-## Execution Modes
+## Multi-GPU Parallel Processing
 
-### 1. Single Instance Mode
-One multi-GPU instance processes all samples sequentially with GPU parallelism.
+The design step supports multi-GPU parallel processing within a single instance:
 
-```bash
-python examples/run_single_instance_batch.py --config examples/batch_config.yaml
+- Design specs are distributed across GPUs using round-robin scheduling
+- Each GPU processes specs independently via `ProcessPoolExecutor`
+- Progress tracking is thread-safe using `ProgressTracker` class
+- Automatic GPU detection via `nvidia-smi`
+
+**Example with ml.g5.12xlarge (4 GPUs):**
+```
+10 design specs → GPU0: specs 0,4,8 | GPU1: specs 1,5,9 | GPU2: specs 2,6 | GPU3: specs 3,7
 ```
 
-**Best for:**
-- Small to medium batches (< 500 samples)
-- Simple setup
-- Consistent performance
+## Data Flow Between Steps
 
-### 2. Multi Instance Mode
-Multiple instances process samples in parallel.
+All intermediate results are stored in S3 and passed between pipeline steps:
 
-```bash
-python examples/run_batch_from_config.py --config examples/batch_config.yaml
+```
+S3 Intermediate Storage:
+├── designs/              ← Design step output
+│   └── spec_name/
+│       └── intermediate_designs/*.cif
+├── inverse_folded/       ← Inverse folding output
+├── folded/               ← Folding validation output
+├── analyzed/             ← Analysis metrics output
+└── metadata/             ← Step execution metadata
+    ├── design/
+    ├── inverse_folding/
+    ├── folding/
+    ├── analysis/
+    └── filtering/
 ```
 
-**Best for:**
-- Large batches (500+ samples)
-- Faster completion time
-- When quota allows multiple instances
+## Scaling
 
-## Scaling: More Instances = Faster Processing
+### Auto-Scaling Presets
 
-The key to faster batch processing is parallelization. Each GPU processes one sample at a time, so adding more instances directly reduces total processing time.
+The pipeline automatically selects scaling based on `num_designs`:
 
-### Scaling Example: 1000 Samples
+| Preset | Designs | Instance Count |
+|--------|---------|----------------|
+| small | ≤10K | 1 per step |
+| medium | 10K-100K | 5 per step |
+| large | 100K-1M | 10 per step |
+| xlarge | >1M | 50 design, 25 others |
 
-| Configuration | Total GPUs | Time | Cost |
-|--------------|------------|------|------|
-| 1x ml.g5.12xlarge | 4 | ~375h (15.6 days) | ~$2,659 |
-| 5x ml.g5.12xlarge | 20 | ~75h (3.1 days) | ~$2,659 |
-| 10x ml.g5.12xlarge | 40 | ~38h (1.6 days) | ~$2,836 |
+### Manual Scaling
 
-**Key insight**: Scaling from 1 to 10 instances reduces time by 10x with similar cost.
+Override in config:
+```yaml
+scaling:
+  preset: auto
+  steps:
+    design:
+      instance_count: 10
+      instance_type: ml.g5.12xlarge
+    folding:
+      instance_count: 5
+```
 
-### Instance Pricing (US East - N. Virginia)
+### Performance Estimates
+
+| Samples | Configuration | Time | Cost |
+|---------|--------------|------|------|
+| 100 | 1x ml.g5.12xlarge (4 GPU) | ~38h | ~$269 |
+| 1000 | 1x ml.g5.12xlarge (4 GPU) | ~375h | ~$2,659 |
+| 1000 | 10x ml.g5.12xlarge (40 GPU) | ~38h | ~$2,695 |
+
+*Based on ~1.5 hours per sample with 100 designs*
+
+## Instance Pricing (US East)
 
 | Instance Type | GPUs | Price/hour | Parallel Samples |
 |--------------|------|------------|------------------|
@@ -140,65 +232,51 @@ The key to faster batch processing is parallelization. Each GPU processes one sa
 | ml.g5.12xlarge | 4 | $7.09 | 4 |
 | ml.g5.48xlarge | 8 | $20.36 | 8 |
 
-*Pricing source: [AWS SageMaker Pricing](https://aws.amazon.com/sagemaker/pricing/)*
-
-### Performance Estimates
-
-| Samples | Configuration | Time | Cost |
-|---------|--------------|------|------|
-| 100 | 1x ml.g5.12xlarge (4 GPU) | ~38h | ~$269 |
-| 100 | 4x ml.g5.xlarge (4 GPU) | ~38h | ~$214 |
-| 100 | 10x ml.g5.xlarge (10 GPU) | ~15h | ~$212 |
-| 1000 | 1x ml.g5.12xlarge (4 GPU) | ~375h | ~$2,659 |
-| 1000 | 10x ml.g5.12xlarge (40 GPU) | ~38h | ~$2,695 |
-
-*Based on ~1.5 hours per sample with 100 designs*
-
-## Configuration
-
-See `examples/batch_config.yaml` for full configuration options:
-
-```yaml
-aws:
-  region: us-east-1
-  s3_bucket: your-bucket
-  role_arn: arn:aws:iam::ACCOUNT:role/SageMakerRole
-  image_uri: ACCOUNT.dkr.ecr.REGION.amazonaws.com/boltzgen-sagemaker:latest
-
-instances:
-  type: ml.g5.12xlarge
-  count: 2                # Multiple instances for parallel processing
-  volume_size: 100
-  max_runtime: 432000     # 5 days max
-
-design:
-  specs_dir: /path/to/specs
-  num_designs: 100
-  budget: 10
-
-batch:
-  per_sample_timeout: 10800  # 3 hours per sample
-```
-
 ## Monitoring
 
 ```bash
+# Pipeline status
+python run_pipeline.py --region us-east-1 status --execution-arn <ARN>
+
 # List jobs
 aws sagemaker list-processing-jobs --name-contains boltzgen
 
-# View job details
-aws sagemaker describe-processing-job --processing-job-name JOB_NAME
-
 # Stream logs
-aws logs tail /aws/sagemaker/ProcessingJobs --follow --log-stream-name-prefix JOB_NAME
+aws logs tail /aws/sagemaker/ProcessingJobs --follow --log-stream-name-prefix <JOB_NAME>
 
 # Download results
-aws s3 sync s3://bucket/boltzgen-batch/BATCH_ID/output ./results
+aws s3 sync s3://bucket/boltzgen-pipeline/output/<TIMESTAMP> ./results
 ```
+
+## Security
+
+### Credential Management
+- AWS credentials are managed via `.env` files (gitignored)
+- Use `.env.example` as template for credential setup
+- Never commit sensitive values to the repository
+- IAM roles should follow least-privilege principle
+
+### Environment Variable Substitution
+
+YAML config files support environment variable substitution:
+
+```yaml
+aws:
+  region: ${AWS_REGION}           # Required - from .env
+  s3_bucket: ${AWS_S3_BUCKET}     # Required - from .env
+  role_arn: ${AWS_ROLE_ARN}       # Required - from .env
+  image_uri: ${AWS_IMAGE_URI:default-image}  # With default value
+```
+
+Syntax:
+- `${VAR_NAME}` - Required variable
+- `${VAR_NAME:default}` - Variable with default value
+
+The `.env` file is automatically loaded when running `run_pipeline.py`.
 
 ## Quota Management
 
-Default SageMaker quotas may be insufficient for large batches. See `examples/QUOTA_INCREASE_GUIDE.md` for instructions on requesting quota increases.
+Default SageMaker quotas may be insufficient. See `examples/QUOTA_INCREASE_GUIDE.md`.
 
 ```bash
 # Check current quotas
@@ -206,8 +284,59 @@ aws service-quotas list-service-quotas --service-code sagemaker \
   --query 'Quotas[?contains(QuotaName, `g5`)]'
 ```
 
+## Shared Utilities (`scripts/utils.py`)
+
+Common utilities used across pipeline step scripts:
+
+| Function | Description |
+|----------|-------------|
+| `ProgressTracker` | Thread-safe progress counter for parallel processing |
+| `get_gpu_count()` | Detect available GPUs via nvidia-smi |
+| `load_step_config()` | Load pipeline step configuration |
+| `save_step_metadata()` | Save step execution metadata |
+| `run_command_with_timeout()` | Execute commands with timeout handling |
+| `validate_directory()` | Validate/create directories |
+
+**Note**: SageMaker ProcessingStep only uploads a single script file per step. For this reason,
+`design_step.py` includes inline copies of the utility functions rather than importing from `utils.py`.
+The `utils.py` file serves as the reference implementation and is used by example scripts.
+
+## Security Considerations
+
+### Input Validation
+- File size limits enforced on uploads (default: 100MB)
+- S3 bucket and prefix names validated before operations
+- Design spec paths resolved to absolute paths to prevent traversal
+
+### Safe Subprocess Execution
+- All subprocess calls use argument lists (not shell strings) to prevent injection
+- Timeout handling for long-running commands
+- Environment variables isolated per process
+
+### Error Handling
+- Specific exception types caught (not bare `except:`)
+- Graceful fallbacks with informative error messages
+- Step validation at pipeline initialization time
+
+## Troubleshooting
+
+### Common Issues
+
+1. **ResourceLimitExceeded**: Quota limit reached
+   - Stop running jobs or request quota increase
+   - See `examples/QUOTA_INCREASE_GUIDE.md`
+
+2. **ImportError for sagemaker**: SDK version incompatibility
+   ```bash
+   pip install 'sagemaker>=2.0,<3.0'
+   ```
+
+3. **No design specs found**: Input directory structure issue
+   - Ensure YAML specs are in the configured `specs_dir`
+   - Check file pattern matches your files
+
 ## Related Documentation
 
 - [BoltzGen Documentation](https://github.com/jwohlwend/boltzgen)
+- [SageMaker Pipelines](https://docs.aws.amazon.com/sagemaker/latest/dg/pipelines.html)
 - [SageMaker Processing Jobs](https://docs.aws.amazon.com/sagemaker/latest/dg/processing-job.html)
-- [SageMaker Quotas](https://docs.aws.amazon.com/sagemaker/latest/dg/regions-quotas.html)

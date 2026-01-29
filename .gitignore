@@ -221,3 +221,8 @@ sagemaker/pipeline/examples/*_specs/
 claude.md
 
 .temp.md
+sagemaker/pipeline/local_config.yaml
+
+# SageMaker Pipeline execution files
+pipeline_info.json
+execution_info_*.json

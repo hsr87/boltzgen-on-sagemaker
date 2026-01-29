@@ -124,7 +124,7 @@ def get_gpu_count():
         result = subprocess.run(["nvidia-smi", "-L"], capture_output=True, text=True, timeout=30)
         lines = [l for l in result.stdout.strip().split("\\n") if l.startswith("GPU")]
         return max(len(lines), 1)
-    except:
+    except Exception:
         return 4
 
 def process_sample(args):

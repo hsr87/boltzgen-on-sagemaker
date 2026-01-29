@@ -122,19 +122,35 @@ def run_boltzgen_inverse_fold(
     if config.get("reuse", True):
         cmd.append("--reuse")
 
-    # Alternative: Direct inverse folding with specific parameters
+    # If config directory doesn't exist, use direct inverse folding approach
     if not (design_dir / "config").exists():
-        # Find the design spec from input
-        design_spec = None
-        for spec_file in (INPUT_DIR / "design_specs").glob("*.yaml"):
-            design_spec = spec_file
-            break
+        # Find design files to process directly
+        intermediate_dir = design_dir / "intermediate_designs"
+        if intermediate_dir.exists():
+            design_files = list(intermediate_dir.glob("*.cif"))
+        else:
+            design_files = list(design_dir.glob("**/*.cif"))
 
-        if design_spec:
+        if design_files:
+            # Use boltzgen's inverse folding on the design files directly
             cmd = [
-                "python", "-m", "boltzgen.resources.main",
-                str(design_dir / "config" / "inverse_folding.yaml"),
+                "boltzgen", "inverse_fold",
+                str(design_files[0].parent),  # Directory containing CIF files
+                "--output", str(output_dir),
+                "--devices", str(config.get("devices", 1)),
             ]
+            if config.get("inverse_fold_avoid"):
+                cmd.extend(["--avoid", config["inverse_fold_avoid"]])
+        else:
+            print(f"WARNING: No design files found in {design_dir}")
+            return {
+                "success": False,
+                "return_code": -1,
+                "elapsed_time": 0,
+                "stdout": "",
+                "stderr": "No design files found",
+                "command": "",
+            }
 
     print(f"Running command: {' '.join(cmd)}")
 
@@ -162,7 +178,11 @@ def run_direct_inverse_folding(
     output_dir: Path,
     config: dict,
 ) -> dict:
-    """Run inverse folding directly on design outputs."""
+    """Run inverse folding directly on design outputs.
+
+    This function uses boltzgen CLI directly instead of embedding
+    Python code in subprocess to avoid code injection vulnerabilities.
+    """
 
     start_time = time.time()
 
@@ -178,39 +198,37 @@ def run_direct_inverse_folding(
     if protocol in ["peptide-anything", "nanobody-anything"] and not inverse_fold_avoid:
         inverse_fold_avoid = "C"
 
+    # Find intermediate designs directory
+    intermediate_dir = input_design_dir / "intermediate_designs"
+    if not intermediate_dir.exists():
+        intermediate_dir = input_design_dir
+
+    # Count design files
+    cif_files = list(intermediate_dir.glob("*.cif"))
+    print(f"Processing designs from: {intermediate_dir}")
+    print(f"Found {len(cif_files)} design files to process")
+
+    if not cif_files:
+        return {
+            "success": False,
+            "return_code": -1,
+            "elapsed_time": 0,
+            "stdout": "",
+            "stderr": "No design files found to process",
+        }
+
+    # Use boltzgen CLI with safe argument passing (no string interpolation in code)
     cmd = [
-        "python", "-c", f"""
-import sys
-sys.path.insert(0, '/opt/ml/code')
-
-from pathlib import Path
-import torch
-from boltzgen.cli.boltzgen import get_artifact_path
-from boltzgen.task.predict.predict import PredictTask
-
-# Configuration
-input_dir = Path('{input_design_dir}')
-output_dir = Path('{output_dir}')
-output_dir.mkdir(parents=True, exist_ok=True)
-
-# Find intermediate designs
-intermediate_dir = input_dir / 'intermediate_designs'
-if not intermediate_dir.exists():
-    intermediate_dir = input_dir
-
-print(f"Processing designs from: {{intermediate_dir}}")
-print(f"Output directory: {{output_dir}}")
-
-# Count designs
-cif_files = list(intermediate_dir.glob('*.cif'))
-print(f"Found {{len(cif_files)}} design files to process")
-
-# The actual inverse folding is handled by boltzgen's internal pipeline
-# This is a placeholder - actual implementation uses the config YAML approach
-print("Inverse folding step would process these files...")
-print("SUCCESS")
-"""
+        "boltzgen", "inverse_fold",
+        str(intermediate_dir),
+        "--output", str(output_dir),
+        "--devices", str(config.get("devices", 1)),
     ]
+
+    if inverse_fold_avoid:
+        cmd.extend(["--avoid", inverse_fold_avoid])
+
+    print(f"Running command: {' '.join(cmd)}")
 
     result = subprocess.run(
         cmd,
@@ -222,7 +240,7 @@ print("SUCCESS")
     elapsed_time = time.time() - start_time
 
     return {
-        "success": result.returncode == 0 or "SUCCESS" in result.stdout,
+        "success": result.returncode == 0,
         "return_code": result.returncode,
         "elapsed_time": elapsed_time,
         "stdout": result.stdout[-10000:] if result.stdout else "",
